@@ -20,6 +20,7 @@
 namespace fs = boost::filesystem;
 #define USE_PCL_LIBRARY
 using namespace lidar_obstacle_detection;
+#define DEBUG // for debug purposes
 
 typedef std::unordered_set<int> my_visited_set_t;
 
@@ -112,13 +113,14 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
     // TODO: 1) Downsample the dataset 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZ> ());
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_f (new pcl::PointCloud<pcl::PointXYZ>);
 
     std::cout << "starting filtering" << std::endl;
      std::cerr << "PointCloud before filtering: " << cloud->width * cloud->height 
    << " data points (" << pcl::getFieldsList (*cloud) << ")." << std::endl;
     pcl::VoxelGrid<pcl::PointXYZ> sor;
    sor.setInputCloud (cloud);
-   sor.setLeafSize (0.1f, 0.1f, 0.1f); // personal TODO: fine-tuning
+   sor.setLeafSize (0.3f, 0.3f, 0.3f); // personal TODO: fine-tuning
    sor.filter (*cloud_filtered);
    std::cerr << "PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height 
    << " data points (" << pcl::getFieldsList (*cloud_filtered) << ")." << std::endl;
@@ -132,21 +134,59 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
     cb.filter(*cloud_filtered); 
 
     // TODO: 3) Segmentation and apply RANSAC
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    seg.setOptimizeCoefficients (true);
+    seg.setModelType (pcl::SACMODEL_PLANE);
+    seg.setMethodType (pcl::SAC_RANSAC);
+    seg.setMaxIterations (1000);
+    seg.setDistanceThreshold (0.25); // personal TODO: fine-tuning
+    pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients ()); //the resultant model coefficients
+    pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
 
 
     // TODO: 4) iterate over the filtered cloud, segment and remove the planar inliers 
+    int i = 0, nr_points = (int) cloud_filtered->size ();
+    // Segment the largest planar component from the remaining cloud
+    seg.setInputCloud (cloud_filtered);
+    seg.segment (*inliers, *coefficients);
+    if (inliers->indices.size () == 0)
+    {
+        std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
+    }
 
+    // Extract the planar inliers from the input cloud
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    extract.setInputCloud (cloud_filtered);
+    extract.setIndices (inliers);
+    extract.setNegative (false);
 
-    // TODO: 5) Create the KDTree and the vector of PointIndices
+    // Get the points associated with the planar surface
+    extract.filter (*cloud_plane); // floor
+    std::cout << "PointCloud representing the planar component: " << cloud_plane->size () << " data points." << std::endl;
 
-
-    // TODO: 6) Set the spatial tolerance for new cluster candidates (pay attention to the tolerance!!!)
-    std::vector<pcl::PointIndices> cluster_indices;
+    // Remove the planar inliers, extract the rest
+    extract.setNegative (true);
+    extract.filter (*cloud_f);
+    *cloud_filtered = *cloud_f;
 
     #ifdef USE_PCL_LIBRARY
 
         //PCL functions
         //HERE 6)
+
+        // TODO: 5) Create the KDTree and the vector of PointIndices
+        pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+        tree->setInputCloud (cloud_filtered);
+        pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+
+        // TODO: 6) Set the spatial tolerance for new cluster candidates (pay attention to the tolerance!!!)
+        std::vector<pcl::PointIndices> cluster_indices;
+        ec.setClusterTolerance (0.35);
+        ec.setMinClusterSize (10);
+        ec.setMaxClusterSize (25000);
+        ec.setSearchMethod (tree);
+        ec.setInputCloud (cloud_filtered);
+        ec.extract (cluster_indices);
     #else
         // Optional assignment
         my_pcl::KdTree treeM;
@@ -165,6 +205,7 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
     **/
     int j = 0;
     int clusterId = 0;
+    renderer.RenderPointCloud(cloud_plane, "floor", colors[1]);
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
     {
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
@@ -177,6 +218,7 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
         renderer.RenderPointCloud(cloud,"originalCloud"+std::to_string(clusterId),colors[2]);
         // TODO: 7) render the cluster and plane without rendering the original cloud 
         //<-- here
+        renderer.RenderPointCloud(cloud_cluster, "cluster"+std::to_string(clusterId), colors[3]);
         //----------
 
         //Here we create the bounding box on the detected clusters
@@ -226,7 +268,7 @@ int main(int argc, char* argv[])
         auto endTime = std::chrono::steady_clock::now();
         auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
         std::cout << "[PointCloudProcessor<PointT>::ReadPcdFile] Loaded "
-        << input_cloud->points.size() << " data points from " << streamIterator->string() <<  "plane segmentation took " << elapsedTime.count() << " milliseconds" << std::endl;
+        << input_cloud->points.size() << " data points from " << streamIterator->string() <<  " plane segmentation took " << elapsedTime.count() << " milliseconds" << std::endl;
 
         streamIterator++;
         if(streamIterator == stream.end())
