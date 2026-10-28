@@ -17,10 +17,29 @@
 #include <unordered_set>
 #include "../include/tree_utilities.hpp"
 #include <boost/filesystem.hpp>
+#include "../include/exctractor.hpp"
 namespace fs = boost::filesystem;
 #define USE_PCL_LIBRARY
 using namespace lidar_obstacle_detection;
 #define DEBUG // for debug purposes
+
+#ifdef DEBUG
+    #define LOG_DEBUG(msg) std::cout << "[DEBUG] " << msg << std::endl
+    #define START_TIMER(tag) \
+        std::chrono::steady_clock::time_point start_##tag = std::chrono::steady_clock::now()
+
+    // Calcola e stampa la differenza di tempo
+    #define STOP_TIMER(tag, name) \
+        do { \
+            std::chrono::steady_clock::time_point end_##tag = std::chrono::steady_clock::now(); \
+            double duration_##tag = std::chrono::duration<double, std::milli>(end_##tag - start_##tag).count(); \
+            std::cout << "[TIMER] " << name << ": " << duration_##tag << " ms" << std::endl; \
+        } while(0)
+#else
+    #define LOG_DEBUG(msg) ((void)0)
+    #define START_TIMER(tag) ((void)0)
+    #define STOP_TIMER(tag, name) ((void)0)
+#endif
 
 typedef std::unordered_set<int> my_visited_set_t;
 
@@ -108,66 +127,68 @@ std::vector<pcl::PointIndices> euclideanCluster(typename pcl::PointCloud<pcl::Po
 }
 
 void 
-ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
+PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud)
 {
     // TODO: 1) Downsample the dataset 
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane (new pcl::PointCloud<pcl::PointXYZ> ());
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_f (new pcl::PointCloud<pcl::PointXYZ>);
-
-    std::cout << "starting filtering" << std::endl;
-     std::cerr << "PointCloud before filtering: " << cloud->width * cloud->height 
-   << " data points (" << pcl::getFieldsList (*cloud) << ")." << std::endl;
-    pcl::VoxelGrid<pcl::PointXYZ> sor;
-   sor.setInputCloud (cloud);
-   sor.setLeafSize (0.3f, 0.3f, 0.3f); // personal TODO: fine-tuning
-   sor.filter (*cloud_filtered);
-   std::cerr << "PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height 
-   << " data points (" << pcl::getFieldsList (*cloud_filtered) << ")." << std::endl;
-
+    START_TIMER(downsample);
+    LOG_DEBUG("starting filtering");
+    LOG_DEBUG("PointCloud before filtering: " << cloud->width * cloud->height 
+    << " data points (" << pcl::getFieldsList (*cloud) << ").");
+    // pcl::VoxelGrid<pcl::PointXYZ> sor;
+    sor.setInputCloud (cloud);
+    sor.setLeafSize (0.3f, 0.3f, 0.3f); // personal TODO: fine-tuning
+    sor.filter (*cloud_filtered);
+    LOG_DEBUG("PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height 
+    << " data points (" << pcl::getFieldsList (*cloud_filtered) << ").");
+    STOP_TIMER(downsample, "1. downsample");
 
     // 2) here we crop the points that are far away from us, in which we are not interested
-    pcl::CropBox<pcl::PointXYZ> cb(true);
+    // pcl::CropBox<pcl::PointXYZ> cb(true);
+    START_TIMER(faraway);
     cb.setInputCloud(cloud_filtered);
     cb.setMin(Eigen::Vector4f (-20, -6, -2, 1));
     cb.setMax(Eigen::Vector4f ( 30, 7, 5, 1));
     cb.filter(*cloud_filtered); 
+    STOP_TIMER(faraway, "2. removing far points");
 
     // TODO: 3) Segmentation and apply RANSAC
-    pcl::SACSegmentation<pcl::PointXYZ> seg;
-    seg.setOptimizeCoefficients (true);
-    seg.setModelType (pcl::SACMODEL_PLANE);
-    seg.setMethodType (pcl::SAC_RANSAC);
-    seg.setMaxIterations (1000);
-    seg.setDistanceThreshold (0.25); // personal TODO: fine-tuning
-    pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients ()); //the resultant model coefficients
-    pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
+    // pcl::SACSegmentation<pcl::PointXYZ> seg;
+    // seg.setOptimizeCoefficients (true);
+    // seg.setModelType (pcl::SACMODEL_PLANE);
+    // seg.setMethodType (pcl::SAC_RANSAC);
+    // seg.setMaxIterations (1000);
+    // seg.setDistanceThreshold (0.25); // personal TODO: fine-tuning
+    // pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients ()); //the resultant model coefficients
+    // pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
 
 
     // TODO: 4) iterate over the filtered cloud, segment and remove the planar inliers 
+    START_TIMER(segmentation);
     int i = 0, nr_points = (int) cloud_filtered->size ();
     // Segment the largest planar component from the remaining cloud
     seg.setInputCloud (cloud_filtered);
     seg.segment (*inliers, *coefficients);
     if (inliers->indices.size () == 0)
     {
-        std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
+        LOG_DEBUG("Could not estimate a planar model for the given dataset.");
     }
 
     // Extract the planar inliers from the input cloud
-    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    // pcl::ExtractIndices<pcl::PointXYZ> extract;
     extract.setInputCloud (cloud_filtered);
     extract.setIndices (inliers);
     extract.setNegative (false);
 
     // Get the points associated with the planar surface
     extract.filter (*cloud_plane); // floor
-    std::cout << "PointCloud representing the planar component: " << cloud_plane->size () << " data points." << std::endl;
+    LOG_DEBUG("PointCloud representing the planar component: " << cloud_plane->size () << " data points.");
 
     // Remove the planar inliers, extract the rest
     extract.setNegative (true);
     extract.filter (*cloud_f);
     *cloud_filtered = *cloud_f;
+    STOP_TIMER(segmentation, "3. segmentation");
+
 
     #ifdef USE_PCL_LIBRARY
 
@@ -175,9 +196,10 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
         //HERE 6)
 
         // TODO: 5) Create the KDTree and the vector of PointIndices
-        pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+        // pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ>);
+        START_TIMER(clustering);
         tree->setInputCloud (cloud_filtered);
-        pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+        // pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
 
         // TODO: 6) Set the spatial tolerance for new cluster candidates (pay attention to the tolerance!!!)
         std::vector<pcl::PointIndices> cluster_indices;
@@ -187,6 +209,7 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
         ec.setSearchMethod (tree);
         ec.setInputCloud (cloud_filtered);
         ec.extract (cluster_indices);
+        STOP_TIMER(clustering, "4. clustering");
     #else
         // Optional assignment
         my_pcl::KdTree treeM;
@@ -195,7 +218,7 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
         cluster_indices = euclideanCluster(cloud_filtered, &treeM, clusterTolerance, setMinClusterSize, setMaxClusterSize);
     #endif
 
-    std::vector<Color> colors = {Color(1,0,0), Color(1,1,0), Color(0,0,1), Color(1,0,1), Color(0,1,1)};
+    // std::vector<Color> colors = {Color(1,0,0), Color(1,1,0), Color(0,0,1), Color(1,0,1), Color(0,1,1)};
 
 
     /**Now we extracted the clusters out of our point cloud and saved the indices in cluster_indices. 
@@ -203,12 +226,14 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
     To separate each cluster out of the vector<PointIndices> we have to iterate through cluster_indices, create a new PointCloud for each entry and write all points of the current cluster in the PointCloud.
     Compute euclidean distance
     **/
+    START_TIMER(rendering);
     int j = 0;
     int clusterId = 0;
     renderer.RenderPointCloud(cloud_plane, "floor", colors[1]);
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
     {
-        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+        // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
         for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit)
         cloud_cluster->push_back ((*cloud_filtered)[*pit]); 
         cloud_cluster->width = cloud_cluster->size ();
@@ -234,8 +259,28 @@ ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointCloud<pcl::PointXYZ>::
 
         ++clusterId;
         j++;
-    }  
+    }
+    STOP_TIMER(rendering, "5. rendering frame");
 
+}
+
+PointCloudProcessor::PointCloudProcessor()
+    : cb(true)
+{
+    // Allocazione unica all'avvio del programma
+    cloud_filtered = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    cloud_plane    = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    cloud_f        = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    tree           = pcl::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+    coefficients   = pcl::make_shared<pcl::ModelCoefficients>();
+    inliers        = pcl::make_shared<pcl::PointIndices>();
+
+    // Pre-configurazione parametri fissi
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(1000);
+    seg.setDistanceThreshold (0.25);
 }
 
 
@@ -256,15 +301,17 @@ int main(int argc, char* argv[])
 
     auto streamIterator = stream.begin();
 
+    PointCloudProcessor processor;
+
     while (not renderer.WasViewerStopped())
     {
         renderer.ClearViewer();
 
-        pcl::PCDReader reader;
+        pcl::PCDReader reader; // need to optimize?
         reader.read (streamIterator->string(), *input_cloud);
         auto startTime = std::chrono::steady_clock::now();
 
-        ProcessAndRenderPointCloud(renderer,input_cloud);
+        processor.ProcessAndRenderPointCloud(renderer,input_cloud);
         auto endTime = std::chrono::steady_clock::now();
         auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
         std::cout << "[PointCloudProcessor<PointT>::ReadPcdFile] Loaded "
