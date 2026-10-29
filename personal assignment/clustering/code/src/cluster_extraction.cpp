@@ -21,7 +21,6 @@
 namespace fs = boost::filesystem;
 #define USE_PCL_LIBRARY
 using namespace lidar_obstacle_detection;
-#define DEBUG // for debug purposes
 
 #ifdef DEBUG
     #define LOG_DEBUG(msg) std::cout << "[DEBUG] " << msg << std::endl
@@ -111,9 +110,9 @@ TODO: Complete the function
 */
 std::vector<pcl::PointIndices> euclideanCluster(typename pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, my_pcl::KdTree* tree, float distanceTol, int setMinClusterSize, int setMaxClusterSize)
 {
-	my_visited_set_t visited{};                                                          //already visited points
-	std::vector<pcl::PointIndices> clusters;                                             //vector of PointIndices that will contain all the clusters
-    std::vector<int> cluster;                                                            //vector of int that is used to store the points that the function proximity will give me back
+	my_visited_set_t visited{};                //already visited points
+	std::vector<pcl::PointIndices> clusters;   //vector of PointIndices that will contain all the clusters
+    std::vector<int> cluster;                  //vector of int that is used to store the points that the function proximity will give me back
 	//for every point of the cloud
     //  if the point has not been visited (use the function called "find")
     //    find clusters using the proximity function
@@ -136,7 +135,12 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
     << " data points (" << pcl::getFieldsList (*cloud) << ").");
     // pcl::VoxelGrid<pcl::PointXYZ> sor;
     sor.setInputCloud (cloud);
-    sor.setLeafSize (0.3f, 0.3f, 0.3f); // personal TODO: fine-tuning
+#ifdef DATASET_1
+    sor.setLeafSize (0.3f, 0.3f, 0.3f);
+#endif
+#ifdef DATASET_2
+    sor.setLeafSize (0.3f, 0.3f, 0.3f);
+#endif
     sor.filter (*cloud_filtered);
     LOG_DEBUG("PointCloud after filtering: " << cloud_filtered->width * cloud_filtered->height 
     << " data points (" << pcl::getFieldsList (*cloud_filtered) << ").");
@@ -146,21 +150,16 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
     // pcl::CropBox<pcl::PointXYZ> cb(true);
     START_TIMER(faraway);
     cb.setInputCloud(cloud_filtered);
+#ifdef DATASET_1
     cb.setMin(Eigen::Vector4f (-20, -6, -2, 1));
     cb.setMax(Eigen::Vector4f ( 30, 7, 5, 1));
+#endif
+#ifdef DATASET_2
+    cb.setMin(Eigen::Vector4f (-20, -6, -2, 1));
+    cb.setMax(Eigen::Vector4f ( 30, 7, 5, 1));
+#endif
     cb.filter(*cloud_filtered); 
     STOP_TIMER(faraway, "2. removing far points");
-
-    // TODO: 3) Segmentation and apply RANSAC
-    // pcl::SACSegmentation<pcl::PointXYZ> seg;
-    // seg.setOptimizeCoefficients (true);
-    // seg.setModelType (pcl::SACMODEL_PLANE);
-    // seg.setMethodType (pcl::SAC_RANSAC);
-    // seg.setMaxIterations (1000);
-    // seg.setDistanceThreshold (0.25); // personal TODO: fine-tuning
-    // pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients ()); //the resultant model coefficients
-    // pcl::PointIndices::Ptr inliers (new pcl::PointIndices ());
-
 
     // TODO: 4) iterate over the filtered cloud, segment and remove the planar inliers 
     START_TIMER(segmentation);
@@ -203,9 +202,16 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
 
         // TODO: 6) Set the spatial tolerance for new cluster candidates (pay attention to the tolerance!!!)
         std::vector<pcl::PointIndices> cluster_indices;
+#ifdef DATASET_1
         ec.setClusterTolerance (0.35);
         ec.setMinClusterSize (10);
         ec.setMaxClusterSize (25000);
+#endif
+#ifdef DATASET_2
+        ec.setClusterTolerance (0.35);
+        ec.setMinClusterSize (10);
+        ec.setMaxClusterSize (25000);
+#endif
         ec.setSearchMethod (tree);
         ec.setInputCloud (cloud_filtered);
         ec.extract (cluster_indices);
@@ -290,17 +296,30 @@ PointCloudProcessor::PointCloudProcessor()
     cloud_filtered = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     cloud_plane    = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     cloud_f        = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+#ifdef KDTREE
     tree           = pcl::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+#endif
+#ifdef OCTREE
+    tree           = pcl::make_shared<pcl::search::Octree<pcl::PointXYZ>>(0.35f); //0.35 = resolution/tolerance
+#endif
     coefficients   = pcl::make_shared<pcl::ModelCoefficients>();
     inliers        = pcl::make_shared<pcl::PointIndices>();
     searchCluster  = pcl::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
 
     // Pre-configurazione parametri fissi
+    // TODO: 3) Segmentation and apply RANSAC
     seg.setOptimizeCoefficients(true);
     seg.setModelType(pcl::SACMODEL_PLANE);
-    seg.setMethodType(pcl::SAC_RANSAC);
+#ifdef DATASET_1
+    seg.setMethodType(pcl::SAC_MSAC);
     seg.setMaxIterations(1000);
     seg.setDistanceThreshold (0.25);
+#endif
+#ifdef DATASET_2
+    seg.setMethodType(pcl::SAC_MSAC);
+    seg.setMaxIterations(1000);
+    seg.setDistanceThreshold (0.25);
+#endif
 }
 
 
@@ -313,8 +332,14 @@ int main(int argc, char* argv[])
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud (new pcl::PointCloud<pcl::PointXYZ>);
 
+#ifdef DATASET_1
     std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/mnt/500GB SSD/uniproject/autonomous_driving/autonomous_assignment/personal assignment/clustering/dataset_1"},
                                                 boost::filesystem::directory_iterator{});
+#endif
+#ifdef DATASET_2
+    std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/mnt/500GB SSD/uniproject/autonomous_driving/autonomous_assignment/personal assignment/clustering/dataset_2"},
+                                                boost::filesystem::directory_iterator{});
+#endif
 
     // sort files in ascending (chronological) order
     std::sort(stream.begin(), stream.end());
