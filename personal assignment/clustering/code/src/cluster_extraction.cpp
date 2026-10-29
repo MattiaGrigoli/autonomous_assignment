@@ -230,6 +230,10 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
     int j = 0;
     int clusterId = 0;
     renderer.RenderPointCloud(cloud_plane, "floor", colors[1]);
+    renderer.RenderPointCloud(cloud,"originalCloud",colors[2]);
+    std::vector<int> pointIdxNKNSearch(1);
+    std::vector<float> pointNKNSquaredDistance(1);
+    pcl::PointXYZ origin(0.0f, 0.0f, 0.0f);
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
     {
         // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster (new pcl::PointCloud<pcl::PointXYZ>);
@@ -240,7 +244,7 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
         cloud_cluster->height = 1;
         cloud_cluster->is_dense = true;
 
-        renderer.RenderPointCloud(cloud,"originalCloud"+std::to_string(clusterId),colors[2]);
+        // renderer.RenderPointCloud(cloud,"originalCloud"+std::to_string(clusterId),colors[2]);
         // TODO: 7) render the cluster and plane without rendering the original cloud 
         //<-- here
         renderer.RenderPointCloud(cloud_cluster, "cluster"+std::to_string(clusterId), colors[3]);
@@ -249,13 +253,28 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
         //Here we create the bounding box on the detected clusters
         pcl::PointXYZ minPt, maxPt;
         pcl::getMinMax3D(*cloud_cluster, minPt, maxPt);
+        searchCluster->setInputCloud(cloud_cluster);
+        searchCluster->nearestKSearch(origin, 1, pointIdxNKNSearch, pointNKNSquaredDistance);
+        pcl::PointXYZ closest_point = cloud_cluster->points[pointIdxNKNSearch[0]];
+        pcl::PointCloud<pcl::PointXYZ>::Ptr single_point_cloud = pcl::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+        single_point_cloud->push_back(closest_point);
+        renderer.RenderRays(Eigen::Vector3f{0.0,0.0,0.0}, single_point_cloud); // closest point of the cluster to the origin/ closest point of the obstacle
 
         //TODO: 8) Here you can plot the distance of each cluster w.r.t ego vehicle
         Box box{minPt.x, minPt.y, minPt.z,
         maxPt.x, maxPt.y, maxPt.z};
+        // renderer.RenderRays(Eigen::Vector3f{0.0,0.0,0.0}, minPt);
         //TODO: 9) Here you can color the vehicles that are both in front and 5 meters away from the ego vehicle
         //please take a look at the function RenderBox to see how to color the box
-        renderer.RenderBox(box, j);
+        float min_distance = std::sqrt(pointNKNSquaredDistance[0]);
+        if (min_distance < 6)
+        {
+            renderer.RenderBox(box, j, colors[0]);   
+        }else
+        {
+            renderer.RenderBox(box, j, colors[4]); 
+        }
+        
 
         ++clusterId;
         j++;
@@ -274,6 +293,7 @@ PointCloudProcessor::PointCloudProcessor()
     tree           = pcl::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
     coefficients   = pcl::make_shared<pcl::ModelCoefficients>();
     inliers        = pcl::make_shared<pcl::PointIndices>();
+    searchCluster  = pcl::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
 
     // Pre-configurazione parametri fissi
     seg.setOptimizeCoefficients(true);

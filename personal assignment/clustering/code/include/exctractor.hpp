@@ -33,7 +33,11 @@ private:
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree;
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
     // std::vector<pcl::PointIndices> cluster_indices;
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr searchCluster;
     std::vector<Color> colors = {Color(1,0,0), Color(1,1,0), Color(0,0,1), Color(1,0,1), Color(0,1,1)};
+    // std::vector<int> pointIdxNKNSearch(1);
+    // std::vector<float> pointNKNSquaredDistance(1);
+    // pcl::PointXYZ origin(0.0f, 0.0f, 0.0f);
 public:
     PointCloudProcessor();
     
