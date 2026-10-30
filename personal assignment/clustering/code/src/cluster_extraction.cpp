@@ -210,7 +210,7 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
 #ifdef DATASET_2
         ec.setClusterTolerance (0.35);
         ec.setMinClusterSize (10);
-        ec.setMaxClusterSize (25000);
+        ec.setMaxClusterSize (500);
 #endif
         ec.setSearchMethod (tree);
         ec.setInputCloud (cloud_filtered);
@@ -236,7 +236,10 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
     int j = 0;
     int clusterId = 0;
     renderer.RenderPointCloud(cloud_plane, "floor", colors[1]);
-    renderer.RenderPointCloud(cloud,"originalCloud",colors[2]);
+    if(renderer.getLidarStatus())
+    {
+        renderer.RenderPointCloud(cloud,"originalCloud",colors[2]);
+    }
     std::vector<int> pointIdxNKNSearch(1);
     std::vector<float> pointNKNSquaredDistance(1);
     pcl::PointXYZ origin(0.0f, 0.0f, 0.0f);
@@ -273,12 +276,18 @@ PointCloudProcessor::ProcessAndRenderPointCloud (Renderer& renderer, pcl::PointC
         //TODO: 9) Here you can color the vehicles that are both in front and 5 meters away from the ego vehicle
         //please take a look at the function RenderBox to see how to color the box
         float min_distance = std::sqrt(pointNKNSquaredDistance[0]);
-        if (min_distance < 6)
+        if(cloud_cluster->size () > 100)
         {
-            renderer.RenderBox(box, j, colors[0]);   
+            if (min_distance < 5)
+            {
+                renderer.RenderBox(box, j, colors[0]);   
+            }else
+            {
+                renderer.RenderBox(box, j, colors[4]); 
+            }
         }else
         {
-            renderer.RenderBox(box, j, colors[4]); 
+            renderer.RenderBox(box, j, Color(0.906, 0, 1)); 
         }
         
 
