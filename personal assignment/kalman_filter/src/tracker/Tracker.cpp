@@ -86,6 +86,10 @@ void Tracker::track(const std::vector<double> &centroids_x,
 
     // TODO: Predict the position
     //For each track --> Predict the position of the tracklets
+    for(size_t i = 0; i < tracks_.size(); ++i)
+    {
+        tracks_[i].predict();
+    }
     
     // TODO: Associate the predictions with the detections
 
