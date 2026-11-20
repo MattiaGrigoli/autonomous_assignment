@@ -92,16 +92,22 @@ void Tracker::track(const std::vector<double> &centroids_x,
     }
     
     // TODO: Associate the predictions with the detections
-
-    // Update tracklets with the new detections
-    for (int i = 0; i < associated_track_det_ids_.size(); ++i)
+    if(lidarStatus)
     {
-        auto det_id = associated_track_det_ids_[i].first;
-        auto track_id = associated_track_det_ids_[i].second;
-        tracks_[track_id].update(centroids_x[det_id], centroids_y[det_id], lidarStatus);
+        dataAssociation(associated_detections, centroids_x, centroids_y);
+
+        // Update tracklets with the new detections
+        for (int i = 0; i < associated_track_det_ids_.size(); ++i)
+        {
+            auto det_id = associated_track_det_ids_[i].first;
+            auto track_id = associated_track_det_ids_[i].second;
+            tracks_[track_id].update(centroids_x[det_id], centroids_y[det_id], lidarStatus);
+        }
     }
 
     // TODO: Remove dead tracklets
+    removeTracks();
 
     // TODO: Add new tracklets
+    addTracks(associated_detections, centroids_x, centroids_y);
 }

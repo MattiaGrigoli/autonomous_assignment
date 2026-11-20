@@ -103,6 +103,7 @@ void CloudManager::processAndRenderPointCloud(const pcl::PointCloud<pcl::PointXY
 
         std::vector<viewer::Box> boxes;
 
+        // Iterate through the clusters and create bounding boxes and centroids
         for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
         {
             pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);

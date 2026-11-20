@@ -342,11 +342,11 @@ int main(int argc, char* argv[])
     pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud (new pcl::PointCloud<pcl::PointXYZ>);
 
 #ifdef DATASET_1
-    std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/mnt/500GB SSD/uniproject/autonomous_driving/autonomous_assignment/personal assignment/clustering/dataset_1"},
+    std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/home/iena/projects/autonomous_assignment/personal assignment/clustering/dataset_1"},
                                                 boost::filesystem::directory_iterator{});
 #endif
 #ifdef DATASET_2
-    std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/mnt/500GB SSD/uniproject/autonomous_driving/autonomous_assignment/personal assignment/clustering/dataset_2"},
+    std::vector<boost::filesystem::path> stream(boost::filesystem::directory_iterator{"/home/iena/projects/autonomous_assignment/personal assignment/clustering/dataset_2"},
                                                 boost::filesystem::directory_iterator{});
 #endif
 

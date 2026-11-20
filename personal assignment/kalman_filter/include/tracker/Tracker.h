@@ -35,7 +35,7 @@ private:
   int cur_id_;
 
   // association
-  std::vector<std::pair<int, int>> associated_track_det_ids_;
+  std::vector<std::pair<int, int>> associated_track_det_ids_; // vector of pairs (detection_id, track_id)
 
   // thresholds
   double distance_threshold_;
